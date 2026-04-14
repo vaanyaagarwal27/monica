@@ -107,23 +107,48 @@ const SYSTEM_PROMPT = `You are Monica, an AI briefing agent. You read AI/tech ne
 
 // ─── 1. CALL GEMINI ──────────────────────────────────────────────────────────
 
+const RETRY_DELAY_MS = 2 * 60 * 1000; // 2 minutes
+const MAX_ATTEMPTS = 3;
+
+async function callGeminiWithRetry(ai, today, input) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+        },
+        contents: [{ role: 'user', parts: [{ text: input }] }],
+      });
+
+      const raw = response.text;
+      const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+      const result = JSON.parse(cleaned);
+      result.date = today;
+      return result;
+    } catch (err) {
+      const is503 = err.status === 503 || err.code === 503;
+      const isUnavailable =
+        err.message?.includes('503') ||
+        err.message?.toLowerCase().includes('unavailable') ||
+        err.code === 'UNAVAILABLE';
+
+      if ((is503 || isUnavailable) && attempt < MAX_ATTEMPTS) {
+        console.log(
+          `Gemini attempt ${attempt}/${MAX_ATTEMPTS} failed (${err.message}). Retrying in 2 minutes...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function getSummaries(today, input) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: 'application/json',
-    },
-    contents: [{ role: 'user', parts: [{ text: input }] }],
-  });
-
-  const raw = response.text;
-  const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-  const result = JSON.parse(cleaned);
-  result.date = today;
-  return result;
+  return callGeminiWithRetry(ai, today, input);
 }
 
 // ─── 2. BUILD HTML EMAIL ─────────────────────────────────────────────────────
