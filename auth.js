@@ -1,11 +1,14 @@
 import { google } from 'googleapis';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { createInterface } from 'readline';
+import http from 'http';
+import { URL } from 'url';
+import open from 'open';
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 const TOKEN_PATH = './token.json';
 const CREDENTIALS_PATH = './credentials.json';
-const REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob';
+const PORT = 5544;
+const REDIRECT_URI = `http://127.0.0.1:${PORT}`;
 
 export async function getAuthenticatedClient() {
   const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8'));
@@ -19,35 +22,43 @@ export async function getAuthenticatedClient() {
     return oAuth2Client;
   }
 
-  return authorizeOOB(oAuth2Client);
+  return authorizeLoopback(oAuth2Client);
 }
 
-async function authorizeOOB(oAuth2Client) {
-  const authUrl = oAuth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: SCOPES,
-  });
+function authorizeLoopback(oAuth2Client) {
+  return new Promise((resolve, reject) => {
+    const authUrl = oAuth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: SCOPES,
+    });
 
-  console.log('\nOpen this URL in your browser to authenticate with Google:\n');
-  console.log(authUrl);
-  console.log('\nAfter approving, Google will show you a code. Paste it below.\n');
+    const server = http.createServer(async (req, res) => {
+      try {
+        const url = new URL(req.url, REDIRECT_URI);
+        const code = url.searchParams.get('code');
+        if (!code) {
+          res.end('No code found. You can close this tab.');
+          return;
+        }
+        res.end('Monica is authorized. Close this tab and return to the terminal.');
+        server.close();
 
-  const code = await prompt('Enter the authorization code: ');
+        const { tokens } = await oAuth2Client.getToken(code);
+        oAuth2Client.setCredentials(tokens);
+        writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+        console.log('\nToken saved to token.json\n');
+        resolve(oAuth2Client);
+      } catch (err) {
+        reject(err);
+      }
+    });
 
-  const { tokens } = await oAuth2Client.getToken(code.trim());
-  oAuth2Client.setCredentials(tokens);
-  writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
-  console.log('Token saved to token.json\n');
-
-  return oAuth2Client;
-}
-
-function prompt(question) {
-  return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
+    server.listen(PORT, () => {
+      console.log('\nOpening your browser to authorize Monica...');
+      console.log('If it doesn\'t open, paste this URL manually:\n');
+      console.log(authUrl + '\n');
+      open(authUrl).catch(() => {});
     });
   });
 }
