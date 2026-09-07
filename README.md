@@ -1,5 +1,7 @@
 # Monica
 
+![Monica daily briefing email](assets/monica-email.png)
+
 Monica is an agentic newsletter digest that runs every night, reads your AI newsletters from Gmail, and sends you a clean HTML email with plain-English summaries — no manual input required.
 
 ## What she does
@@ -7,7 +9,7 @@ Monica is an agentic newsletter digest that runs every night, reads your AI news
 1. Hits Gmail at 11 PM via cron and searches for emails from the last 24 hours
 2. If nothing arrived, stops — no email sent
 3. If newsletters are there, feeds the raw content to Gemini 2.5 Flash
-4. Gets back up to 4 structured summaries (headline + explanation + why it matters)
+4. Gets back up to 15 structured summaries (headline + explanation + why it matters)
 5. Wraps them in a designed HTML email and sends it via Gmail SMTP
 
 ## Newsletters she reads
@@ -56,7 +58,7 @@ npm install
 node auth.js
 ```
 
-`auth.js` opens a Google OAuth URL, asks you to paste the authorization code, and saves `token.json`. This is a one-time step.
+`auth.js` opens a Google OAuth URL in your browser, you approve, and it saves `token.json` automatically. This is a one-time step.
 
 ### 5. Run
 
